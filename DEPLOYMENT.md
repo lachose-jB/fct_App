@@ -496,6 +496,297 @@ Pour toute question ou problème:
 - [ ] Tests de connexion/inscription OK
 - [ ] Tests de fonctionnalités timesheet OK
 
+## 🌐 Déploiement sur Netlify
+
+### ⚠️ Limitations Importantes
+
+**Netlify n'est PAS idéal pour cette application** car:
+- ❌ Netlify est conçu pour les **sites statiques**
+- ❌ Pas de support natif pour **serveurs Node.js persistants**
+- ❌ Pas de support pour **SQLite** (base de données locale)
+- ❌ Netlify Functions sont **stateless** (pas de session persistante)
+
+### ✅ Alternatives Recommandées
+
+Pour cette application, privilégiez:
+
+1. **Render.com** (Gratuit + facile) - RECOMMANDÉ
+2. **Railway.app** (Gratuit + moderne)
+3. **Fly.io** (Gratuit avec limites)
+4. **DigitalOcean App Platform**
+
+---
+
+## 🚀 Déploiement sur Render (Recommandé)
+
+### Étapes de Déploiement
+
+#### 1. Préparation du Projet
+
+Créer un fichier `render.yaml` à la racine:
+
+```yaml
+services:
+  - type: web
+    name: fct-timesheet
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+```
+
+#### 2. Sur Render.com
+
+1. Créer un compte sur [render.com](https://render.com)
+2. Cliquer sur **"New +"** → **"Web Service"**
+3. Connecter votre repository Git (GitHub/GitLab)
+4. Configuration automatique détectée via `render.yaml`
+5. Cliquer sur **"Create Web Service"**
+
+#### 3. Configuration Variables d'Environnement
+
+Dans le dashboard Render, onglet **Environment**:
+
+```
+NODE_ENV=production
+SESSION_SECRET=(généré automatiquement)
+PORT=10000
+DB_PATH=/opt/render/project/src/fct_timesheet.db
+```
+
+#### 4. Déploiement
+
+- Render déploie automatiquement à chaque `git push`
+- URL fournie: `https://fct-timesheet.onrender.com`
+- SSL automatique ✅
+
+### ⚠️ Limitation du Plan Gratuit Render
+
+- L'application **s'endort après 15 min d'inactivité**
+- Redémarre au premier accès (attente ~30 secondes)
+- **Solution**: Passer au plan payant ($7/mois)
+
+---
+
+## 🛤️ Déploiement sur Railway.app
+
+### Étapes Rapides
+
+1. Aller sur [railway.app](https://railway.app)
+2. Cliquer sur **"Start a New Project"**
+3. Sélectionner **"Deploy from GitHub repo"**
+4. Choisir votre repository
+5. Railway détecte automatiquement Node.js
+
+### Configuration Variables
+
+Dans **Settings → Variables**:
+
+```
+NODE_ENV=production
+SESSION_SECRET=<générer avec crypto.randomBytes>
+PORT=3000
+```
+
+### Avantages Railway
+
+- ✅ Déploiement automatique
+- ✅ SSL automatique
+- ✅ $5 de crédit gratuit/mois
+- ✅ Base de données PostgreSQL intégrée (si besoin migration)
+
+---
+
+## 🦋 Déploiement sur Fly.io
+
+### Installation Fly CLI
+
+```bash
+curl -L https://fly.io/install.sh | sh
+```
+
+### Initialisation
+
+```bash
+cd ~/apps/fct-timesheet
+fly launch
+```
+
+Répondre aux questions:
+- **App name**: fct-timesheet
+- **Region**: Paris (cdg)
+- **PostgreSQL**: No (on garde SQLite)
+- **Redis**: No
+
+### Configuration `fly.toml`
+
+```toml
+app = "fct-timesheet"
+primary_region = "cdg"
+
+[build]
+  builder = "heroku/buildpacks:20"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+[mounts]
+  source = "fct_data"
+  destination = "/data"
+```
+
+### Variables Secrets
+
+```bash
+fly secrets set SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+```
+
+### Déploiement
+
+```bash
+fly deploy
+```
+
+URL: `https://fct-timesheet.fly.dev`
+
+---
+
+## 🔄 Migration SQLite → PostgreSQL (pour production sérieuse)
+
+Pour un déploiement professionnel, migrer vers PostgreSQL:
+
+### 1. Installer les dépendances
+
+```bash
+npm install pg
+```
+
+### 2. Adapter `database.js`
+
+Remplacer SQLite par PostgreSQL (voir documentation technique).
+
+### 3. Utiliser Railway/Render PostgreSQL
+
+- Railway: Ajouter **PostgreSQL plugin**
+- Render: Créer une **PostgreSQL database**
+
+Variable d'environnement automatique:
+```
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+```
+
+---
+
+## ⚡ Solution Netlify (Frontend Seulement)
+
+Si vous voulez absolument Netlify, il faut **séparer frontend et backend**:
+
+### Architecture Hybride
+
+1. **Netlify**: Héberger les pages statiques (HTML/CSS/JS)
+2. **Render/Railway**: Héberger l'API Node.js
+
+### Modifications Nécessaires
+
+#### Netlify (`public/`)
+```
+public/
+  ├── index.html
+  ├── login.html
+  ├── signup.html
+  └── dashboard.html
+```
+
+#### Backend API (Render)
+```javascript
+// Ajouter CORS dans server.js
+const cors = require('cors');
+app.use(cors({
+  origin: 'https://votre-site.netlify.app',
+  credentials: true
+}));
+```
+
+#### Dashboard Frontend
+Changer les appels API:
+```javascript
+// Remplacer
+fetch('/api/auth/me')
+
+// Par
+fetch('https://votre-api.onrender.com/api/auth/me', {
+  credentials: 'include'
+})
+```
+
+### Déploiement Netlify
+
+```bash
+# Installer Netlify CLI
+npm install -g netlify-cli
+
+# Se connecter
+netlify login
+
+# Déployer le dossier public
+netlify deploy --prod --dir=public
+```
+
+Fichier `netlify.toml`:
+```toml
+[build]
+  publish = "public"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+```
+
+---
+
+## 📊 Comparatif Plateformes
+
+| Plateforme | Prix Gratuit | SSL | Base de données | Recommandation |
+|------------|--------------|-----|-----------------|----------------|
+| **Render** | ✅ | ✅ | SQLite/PostgreSQL | ⭐⭐⭐⭐⭐ |
+| **Railway** | $5/mois crédit | ✅ | PostgreSQL | ⭐⭐⭐⭐ |
+| **Fly.io** | Limité | ✅ | SQLite/PostgreSQL | ⭐⭐⭐⭐ |
+| **Netlify** | ❌ (Frontend uniquement) | ✅ | ❌ | ⭐⭐ (avec API externe) |
+| **Heroku** | ❌ (plus gratuit) | ✅ | PostgreSQL | ⭐⭐⭐ |
+
+---
+
+## 🎯 Recommandation Finale
+
+**Pour cette application complète (frontend + backend + DB):**
+
+👉 **Render.com** - Le plus simple et gratuit  
+👉 **Railway.app** - Si vous aimez les interfaces modernes  
+👉 **VPS Ubuntu** - Si vous voulez le contrôle total (voir début du guide)
+
+**Évitez Netlify** pour cette app à moins de faire l'architecture hybride.
+
 ---
 
 **Besoin d'aide?** Consultez [ARCHITECTURE.md](ARCHITECTURE.md) pour plus de détails techniques.

@@ -8,6 +8,22 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        @keyframes slide-in {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .animate-slide-in {
+            animation: slide-in 0.3s ease-out;
+        }
+    </style>
 
     <!-- React et React-DOM via CDN -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -80,8 +96,11 @@
 
             const [activeMonth, setActiveMonth] = useState(1); // 1 = Février
             const [timesheet, setTimesheet] = useState({});
-
-            // Check session on mount - redirect if not logged in
+            const [showExportModal, setShowExportModal] = useState(false);
+            const [exportFormat, setExportFormat] = useState('pdf');
+            const [selectedMonths, setSelectedMonths] = useState([1]);
+            const [saving, setSaving] = useState(false);
+            const [notification, setNotification] = useState(null);
             useEffect(() => {
                 fetch('/api/auth/me')
                     .then(res => {
@@ -118,10 +137,15 @@
                 window.location.href = '/login.html';
             };
 
+            const showNotification = (message, type = 'success') => {
+                setNotification({ message, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
+
             const handleSave = async (newData) => {
-                // Save logic
+                setSaving(true);
                 try {
-                    await fetch('/api/timesheet', {
+                    const response = await fetch('/api/timesheet', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -130,9 +154,19 @@
                             data: newData || timesheet
                         })
                     });
-                    // Maybe show a toast
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        showNotification('✅ Données sauvegardées avec succès', 'success');
+                    } else {
+                        const error = await response.json();
+                        showNotification('❌ Erreur: ' + (error.error || 'Échec de la sauvegarde'), 'error');
+                    }
                 } catch (e) {
-                    alert("Erreur lors de la sauvegarde");
+                    console.error('Save error:', e);
+                    showNotification('❌ Erreur de connexion au serveur', 'error');
+                } finally {
+                    setSaving(false);
                 }
             };
 
@@ -245,12 +279,223 @@
                 return { daysWorked, daysAbsent };
             }, [timesheet, activeMonth]);
 
+            const handleExportPDF = () => {
+                const months = exportFormat === 'pdf' ? [activeMonth] : selectedMonths;
+                
+                // Créer le contenu HTML pour l'impression
+                let content = `
+                    <html>
+                    <head>
+                        <title>FCT - Compte-rendu d'activité ${YEAR}</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; margin: 20px; }
+                            h1 { color: #1e40af; font-size: 24px; margin-bottom: 10px; }
+                            h2 { color: #334155; font-size: 18px; margin-top: 20px; }
+                            .header { border-bottom: 2px solid #1e40af; padding-bottom: 10px; margin-bottom: 20px; }
+                            .info { font-size: 12px; color: #64748b; margin-bottom: 20px; }
+                            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; page-break-inside: auto; }
+                            tr { page-break-inside: avoid; page-break-after: auto; }
+                            th { background: #f1f5f9; padding: 8px; text-align: left; font-size: 11px; border: 1px solid #cbd5e1; }
+                            td { padding: 6px 8px; font-size: 10px; border: 1px solid #e2e8f0; }
+                            .status { padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+                            .full { background: #dbeafe; color: #1e40af; }
+                            .half { background: #e0e7ff; color: #4338ca; }
+                            .absence { background: #fee2e2; color: #991b1b; }
+                            .ferie { background: #fef3c7; color: #92400e; }
+                            .weekend { background: #f1f5f9; color: #94a3b8; }
+                            .stats { background: #f8fafc; padding: 10px; border-radius: 5px; margin-top: 10px; }
+                            .footer { margin-top: 20px; font-size: 10px; color: #94a3b8; text-align: center; }
+                            @media print {
+                                .pagebreak { page-break-before: always; }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>FCT - Compte-rendu d'Activité</h1>
+                            <div class="info">
+                                <strong>Utilisateur:</strong> ${user.username} | 
+                                <strong>Exercice:</strong> ${YEAR} | 
+                                <strong>Date d'export:</strong> ${new Date().toLocaleDateString('fr-FR')}
+                            </div>
+                        </div>
+                `;
+
+                months.forEach((monthIdx, index) => {
+                    if (index > 0) content += '<div class="pagebreak"></div>';
+                    
+                    const daysInMonth = getDaysInMonth(monthIdx);
+                    let monthWorked = 0;
+                    let monthAbsent = 0;
+
+                    content += `<h2>${MONTHS[monthIdx]} ${YEAR}</h2><table><thead><tr><th>Date</th><th>Jour</th><th>Statut</th><th>Commentaire</th></tr></thead><tbody>`;
+
+                    for (let d = 1; d <= daysInMonth; d++) {
+                        const dayInfo = getDayInfo(d, monthIdx);
+                        const entry = timesheet[dayInfo.dateString] || {};
+                        let statusLabel = '';
+                        let statusClass = '';
+
+                        if (dayInfo.isLocked) {
+                            if (dayInfo.type === TYPES.FERIE) {
+                                statusLabel = 'Férié';
+                                statusClass = 'ferie';
+                            } else {
+                                statusLabel = 'Week-end';
+                                statusClass = 'weekend';
+                            }
+                        } else if (entry.status === 'FULL') {
+                            statusLabel = 'Présence';
+                            statusClass = 'full';
+                            monthWorked += 1;
+                        } else if (entry.status === 'HALF') {
+                            statusLabel = 'Demi-journée';
+                            statusClass = 'half';
+                            monthWorked += 0.5;
+                            monthAbsent += 0.5;
+                        } else if (entry.status === 'ABSENCE') {
+                            statusLabel = 'Absence';
+                            statusClass = 'absence';
+                            monthAbsent += 1;
+                        } else {
+                            statusLabel = '-';
+                        }
+
+                        content += `
+                            <tr>
+                                <td>${String(d).padStart(2, '0')}/${String(monthIdx + 1).padStart(2, '0')}/${YEAR}</td>
+                                <td>${DAYS_FR[dayInfo.dayOfWeek]}</td>
+                                <td><span class="status ${statusClass}">${statusLabel}</span></td>
+                                <td>${entry.comment || (dayInfo.label || '-')}</td>
+                            </tr>
+                        `;
+                    }
+
+                    content += `</tbody></table>`;
+                    content += `
+                        <div class="stats">
+                            <strong>Récapitulatif ${MONTHS[monthIdx]}:</strong> 
+                            Jours travaillés: ${monthWorked} | 
+                            Absences: ${monthAbsent} | 
+                            Total: ${monthWorked + monthAbsent} jours
+                        </div>
+                    `;
+                });
+
+                content += `
+                        <div class="footer">
+                            Document généré par FCT Timesheet - ${new Date().toLocaleString('fr-FR')}
+                        </div>
+                    </body>
+                    </html>
+                `;
+
+                // Ouvrir dans une nouvelle fenêtre et imprimer
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(content);
+                printWindow.document.close();
+                setTimeout(() => {
+                    printWindow.print();
+                }, 500);
+
+                setShowExportModal(false);
+            };
+
+            const handleExportCSV = () => {
+                let csvContent = 'Date,Jour,Mois,Année,Statut,Jours,Commentaire\n';
+
+                selectedMonths.forEach(monthIdx => {
+                    const daysInMonth = getDaysInMonth(monthIdx);
+                    
+                    for (let d = 1; d <= daysInMonth; d++) {
+                        const dayInfo = getDayInfo(d, monthIdx);
+                        const entry = timesheet[dayInfo.dateString] || {};
+                        let statusLabel = '';
+                        let daysValue = '';
+
+                        if (dayInfo.isLocked) {
+                            if (dayInfo.type === TYPES.FERIE) {
+                                statusLabel = 'Férié';
+                                daysValue = '0';
+                            } else {
+                                statusLabel = 'Week-end';
+                                daysValue = '0';
+                            }
+                        } else if (entry.status === 'FULL') {
+                            statusLabel = 'Présence';
+                            daysValue = '1';
+                        } else if (entry.status === 'HALF') {
+                            statusLabel = 'Demi-journée';
+                            daysValue = '0.5';
+                        } else if (entry.status === 'ABSENCE') {
+                            statusLabel = 'Absence';
+                            daysValue = '0';
+                        } else {
+                            statusLabel = 'Non renseigné';
+                            daysValue = '0';
+                        }
+
+                        const comment = (entry.comment || dayInfo.label || '').replace(/,/g, ';').replace(/\n/g, ' ');
+                        
+                        csvContent += `${String(d).padStart(2, '0')}/${String(monthIdx + 1).padStart(2, '0')}/${YEAR},${DAYS_FR[dayInfo.dayOfWeek]},${MONTHS[monthIdx]},${YEAR},${statusLabel},${daysValue},"${comment}"\n`;
+                    }
+                });
+
+                // Télécharger le fichier CSV
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `fct_timesheet_${YEAR}_${user.username}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                setShowExportModal(false);
+            };
+
+            const handleExport = () => {
+                if (exportFormat === 'pdf') {
+                    handleExportPDF();
+                } else {
+                    handleExportCSV();
+                }
+            };
+
+            const toggleMonthSelection = (monthIdx) => {
+                if (selectedMonths.includes(monthIdx)) {
+                    setSelectedMonths(selectedMonths.filter(m => m !== monthIdx));
+                } else {
+                    setSelectedMonths([...selectedMonths, monthIdx].sort((a, b) => a - b));
+                }
+            };
+
             if (loading) return <div className="h-screen flex text-center items-center justify-center text-slate-500">Chargement...</div>;
 
             if (!user) return null; // Will be redirected by useEffect
 
             return (
                 <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
+                    {/* Notification Toast */}
+                    {notification && (
+                        <div className="fixed top-4 right-4 z-50 animate-slide-in">
+                            <div className={`px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 ${
+                                notification.type === 'success' 
+                                    ? 'bg-green-500 text-white' 
+                                    : 'bg-red-500 text-white'
+                            }`}>
+                                <span className="font-medium">{notification.message}</span>
+                                <button 
+                                    onClick={() => setNotification(null)}
+                                    className="text-white hover:text-gray-200 font-bold text-lg leading-none"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Header */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -271,10 +516,27 @@
                                 </div>
                                 <button
                                     onClick={() => handleSave(null)}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+                                    disabled={saving}
+                                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
                                 >
-                                    <Save size={16} />
-                                    <span className="hidden sm:inline">Sauvegarder</span>
+                                    {saving ? (
+                                        <>
+                                            <span className="animate-spin">⏳</span>
+                                            <span className="hidden sm:inline">Sauvegarde...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save size={16} />
+                                            <span className="hidden sm:inline">Sauvegarder</span>
+                                        </>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => setShowExportModal(true)}
+                                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+                                >
+                                    <Download size={16} />
+                                    <span className="hidden sm:inline">Exporter</span>
                                 </button>
                                 <button
                                     onClick={handleLogout}
@@ -428,6 +690,133 @@
                             </div>
                         </div>
                     </main>
+
+                    {/* Modal Export */}
+                    {showExportModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                                <div className="p-6 border-b border-slate-200">
+                                    <div className="flex items-center justify-between">
+                                        <h2 className="text-xl font-bold text-slate-800">Exporter les données</h2>
+                                        <button
+                                            onClick={() => setShowExportModal(false)}
+                                            className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 space-y-6">
+                                    {/* Format d'export */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-3">
+                                            Format d'export
+                                        </label>
+                                        <div className="flex gap-4">
+                                            <button
+                                                onClick={() => {
+                                                    setExportFormat('pdf');
+                                                    setSelectedMonths([activeMonth]);
+                                                }}
+                                                className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+                                                    exportFormat === 'pdf'
+                                                        ? 'border-blue-600 bg-blue-50'
+                                                        : 'border-slate-200 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <div className="text-2xl mb-2">📄</div>
+                                                <div className="font-semibold text-slate-800">PDF</div>
+                                                <div className="text-xs text-slate-500 mt-1">
+                                                    Mois courant seulement
+                                                </div>
+                                            </button>
+                                            <button
+                                                onClick={() => setExportFormat('csv')}
+                                                className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+                                                    exportFormat === 'csv'
+                                                        ? 'border-blue-600 bg-blue-50'
+                                                        : 'border-slate-200 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <div className="text-2xl mb-2">📊</div>
+                                                <div className="font-semibold text-slate-800">CSV</div>
+                                                <div className="text-xs text-slate-500 mt-1">
+                                                    Choix des mois
+                                                </div>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Sélection des mois (CSV uniquement) */}
+                                    {exportFormat === 'csv' && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-3">
+                                                Sélectionner les mois à exporter
+                                            </label>
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                {MONTHS.map((month, index) => (
+                                                    <button
+                                                        key={month}
+                                                        onClick={() => toggleMonthSelection(index)}
+                                                        className={`px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                                                            selectedMonths.includes(index)
+                                                                ? 'bg-blue-600 text-white'
+                                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                        }`}
+                                                    >
+                                                        {month.substring(0, 3)}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="mt-2 text-xs text-slate-500">
+                                                {selectedMonths.length} mois sélectionné(s)
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Récapitulatif */}
+                                    <div className="bg-slate-50 rounded-lg p-4">
+                                        <div className="text-sm text-slate-600 space-y-2">
+                                            <div className="flex justify-between">
+                                                <span>Format:</span>
+                                                <span className="font-semibold">{exportFormat.toUpperCase()}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Mois:</span>
+                                                <span className="font-semibold">
+                                                    {exportFormat === 'pdf'
+                                                        ? MONTHS[activeMonth]
+                                                        : `${selectedMonths.length} mois`}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Utilisateur:</span>
+                                                <span className="font-semibold">{user.username}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 border-t border-slate-200 flex gap-3">
+                                    <button
+                                        onClick={() => setShowExportModal(false)}
+                                        className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                                    >
+                                        Annuler
+                                    </button>
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={exportFormat === 'csv' && selectedMonths.length === 0}
+                                        className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
+                                    >
+                                        <Download size={16} />
+                                        Exporter
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
