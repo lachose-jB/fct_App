@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FCT Timesheet - Accueil</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+
+<body class="bg-slate-50">
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="text-center">
+            <div class="mb-8">
+                <div class="inline-block bg-blue-600 text-white font-bold rounded-xl p-4 text-4xl tracking-tighter shadow-2xl mb-4">
+                    FCT
+                </div>
+                <h1 class="text-4xl font-bold text-slate-800 mb-2">Gestion du Temps</h1>
+                <p class="text-slate-600">Application de suivi du temps de travail</p>
+            </div>
+            
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="/login.html" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">
+                    Se connecter
+                </a>
+                <a href="/signup.html" class="px-8 py-3 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg shadow-lg border-2 border-slate-200 transition-all transform hover:scale-105">
+                    Créer un compte
+                </a>
+            </div>
+            
+            <div class="mt-12 text-sm text-slate-500">
+                <p>&copy; 2026 FCT. Application sécurisée.</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Rediriger automatiquement si l'utilisateur est déjà connecté
+        fetch('/api/auth/me')
+            .then(res => res.json())
+            .then(data => {
+                if (data.user) {
+                    window.location.href = '/dashboard.html';
+                }
+            })
+            .catch(() => {});
+    </script>
+</body>
+</html>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Calendar, ChevronLeft, ChevronRight, Save, FileText, CheckCircle, XCircle, AlertCircle, Download, PieChart, LogOut, User } from 'lucide-react';
+
+        // --- Configuration des données ---
+        const COMPANY_NAME = "FCT";
+        const YEAR = 2026;
+
+        const MONTHS = [
+            "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+            "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+        ];
+
+        const DAYS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+
+        const HOLIDAYS_2026 = {
+            "01-01": "Jour de l'An",
+            "04-06": "Lundi de Pâques",
+            "05-01": "Fête du Travail",
+            "05-08": "Victoire 1945",
+            "05-14": "Ascension",
+            "05-25": "Lundi de Pentecôte",
+            "07-14": "Fête Nationale",
+            "08-15": "Assomption",
+            "11-01": "Toussaint",
+            "11-11": "Armistice 1918",
+            "12-25": "Noël"
+        };
+
+        const TYPES = {
+            FULL: { id: 'FULL', label: 'Journée complète', color: 'bg-blue-100 text-blue-700 border-blue-300', icon: CheckCircle },
+            HALF: { id: 'HALF', label: 'Demi-journée', color: 'bg-indigo-100 text-indigo-700 border-indigo-300', icon: PieChart },
+            ABSENCE: { id: 'ABSENCE', label: 'Absence', color: 'bg-red-100 text-red-700 border-red-300', icon: XCircle },
+            FERIE: { id: 'F', label: 'Férié', color: 'bg-amber-100 text-amber-700 border-amber-300', icon: AlertCircle },
+            WEEKEND: { id: 'W', label: 'Week-end', color: 'bg-gray-100 text-gray-400', icon: null },
+            EMPTY: { id: null, label: '', color: 'bg-white hover:bg-gray-50', icon: null }
+        };
+
+        // --- COMPONENTS ---
+
+        function LoginForm({ onLogin }) {
+            const [isRegistering, setIsRegistering] = useState(false);
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
+
+                try {
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const data = await res.json();
+
+                    if (res.ok) {
+                        if (isRegistering) {
+                            window.location.reload();
+                        } else {
+                            onLogin(data.user);
+                        }
+                    } else {
+                        setError(data.error || 'Une erreur est survenue');
+                    }
+                } catch (err) {
+                    setError('Erreur de connexion serveur');
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-50">
+                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border border-slate-200">
+                        <div className="text-center mb-6">
+                            <div className="bg-blue-600 text-white font-bold rounded-lg p-2 text-2xl tracking-tighter shadow-lg inline-block mb-2">
+                                FCT
+                            </div>
+                            <h2 className="text-xl font-semibold text-slate-800">{isRegistering ? 'Créer un compte' : 'Connexion'}</h2>
+                        </div>
+
+                        {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4">{error}</div>}
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Nom d'utilisateur</label>
+                                <input
+                                    type="text"
+                                    value={username}
+                                    onChange={e => setUsername(e.target.value)}
+                                    className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    required
+                                />
+                            </div>
+                            <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-md font-medium hover:bg-blue-700 transition-colors">
+                                {isRegistering ? "S'inscrire" : "Se connecter"}
+                            </button>
+                        </form>
+
+                        <div className="mt-4 text-center text-sm text-slate-600">
+                            {isRegistering ? "Déjà un compte ?" : "Pas encore de compte ?"} {' '}
+                            <button onClick={() => setIsRegistering(!isRegistering)} className="text-blue-600 font-medium hover:underline">
+                                {isRegistering ? "Se connecter" : "S'inscrire"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            const [activeMonth, setActiveMonth] = useState(0); // 0 = Janvier
+            const [timesheet, setTimesheet] = useState({});
+
+            // Check session on mount
+            useEffect(() => {
+                fetch('/api/auth/me')
+                    .then(res => {
+                        if (res.ok) return res.json();
+                        throw new Error('Not logged in');
+                    })
+                    .then(data => {
+                        if (data.user) setUser(data.user);
+                    })
+                    .catch(() => { })
+                    .finally(() => setLoading(false));
+            }, []);
+
+            // Load timesheet when user or month changes
+            useEffect(() => {
+                if (!user) return;
+
+                fetch(`/api/timesheet/${YEAR}/${activeMonth}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        setTimesheet(data.data || {});
+                    })
+                    .catch(err => console.error("Error loading timesheet", err));
+            }, [user, activeMonth]);
+
+            const handleLogout = async () => {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                setUser(null);
+                setTimesheet({});
+            };
+
+            const handleSave = async (newData) => {
+                // Save logic
+                try {
+                    await fetch('/api/timesheet', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            year: YEAR,
+                            month: activeMonth,
+                            data: newData || timesheet
+                        })
+                    });
+                    // Maybe show a toast
+                } catch (e) {
+                    alert("Erreur lors de la sauvegarde");
+                }
+            };
+
+            // --- Helpers ---
+
+            const getDaysInMonth = (monthIndex) => {
+                return new Date(YEAR, monthIndex + 1, 0).getDate();
+            };
+
+            const getDayInfo = (day, monthIndex) => {
+                const date = new Date(YEAR, monthIndex, day);
+                const dateString = `${YEAR}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayOfWeek = date.getDay(); // 0 = Dimanche
+                const formattedDateKey = String(monthIndex + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+
+                let type = TYPES.EMPTY;
+                let label = '';
+                let isLocked = false;
+
+                if (HOLIDAYS_2026[formattedDateKey]) {
+                    type = TYPES.FERIE;
+                    label = HOLIDAYS_2026[formattedDateKey];
+                    isLocked = true;
+                }
+                else if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    type = TYPES.WEEKEND;
+                    isLocked = true;
+                }
+
+                return { date, dateString, dayOfWeek, type, label, isLocked };
+            };
+
+            const handleCellClick = (dateString) => {
+                const currentEntry = timesheet[dateString] || { status: null, comment: '' };
+                const currentStatus = currentEntry.status;
+
+                let nextStatus = null;
+                if (currentStatus === null) nextStatus = 'FULL';
+                else if (currentStatus === 'FULL') nextStatus = 'HALF';
+                else if (currentStatus === 'HALF') nextStatus = 'ABSENCE';
+                else nextStatus = null;
+
+                const newTimesheet = {
+                    ...timesheet,
+                    [dateString]: { ...currentEntry, status: nextStatus }
+                };
+                setTimesheet(newTimesheet);
+            };
+
+            const handleCommentChange = (dateString, value) => {
+                const currentEntry = timesheet[dateString] || { status: null, comment: '' };
+                const newTimesheet = {
+                    ...timesheet,
+                    [dateString]: { ...currentEntry, comment: value }
+                };
+                setTimesheet(newTimesheet);
+            };
+
+            const handleFillMonth = () => {
+                if (!window.confirm("Voulez-vous remplir automatiquement tous les jours ouvrés de ce mois comme 'Présence complète' ?")) return;
+
+                const daysInMonth = getDaysInMonth(activeMonth);
+                const newEntries = { ...timesheet };
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const { dateString, isLocked } = getDayInfo(d, activeMonth);
+                    if (!isLocked) {
+                        const existing = newEntries[dateString] || { status: null, comment: '' };
+                        newEntries[dateString] = {
+                            status: existing.status || 'FULL',
+                            comment: existing.comment || ''
+                        };
+                    }
+                }
+                setTimesheet(newEntries);
+                handleSave(newEntries); // Auto save on mass action
+            };
+
+            const getStatus = (dateString, dayInfo) => {
+                if (dayInfo.isLocked) return dayInfo.type;
+                const entry = timesheet[dateString];
+                if (!entry || !entry.status) return TYPES.EMPTY;
+                if (entry.status === 'FULL') return TYPES.FULL;
+                if (entry.status === 'HALF') return TYPES.HALF;
+                if (entry.status === 'ABSENCE') return TYPES.ABSENCE;
+                return TYPES.EMPTY;
+            };
+
+            const stats = useMemo(() => {
+                let daysWorked = 0;
+                let daysAbsent = 0;
+                const daysInMonth = getDaysInMonth(activeMonth);
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const { dateString, isLocked } = getDayInfo(d, activeMonth);
+                    if (!isLocked) {
+                        const entry = timesheet[dateString];
+                        if (entry && entry.status) {
+                            if (entry.status === 'FULL') {
+                                daysWorked += 1.0;
+                            } else if (entry.status === 'HALF') {
+                                daysWorked += 0.5;
+                                daysAbsent += 0.5;
+                            } else if (entry.status === 'ABSENCE') {
+                                daysAbsent += 1.0;
+                            }
+                        }
+                    }
+                }
+                return { daysWorked, daysAbsent };
+            }, [timesheet, activeMonth]);
+
+            if (loading) return <div className="h-screen flex text-center items-center justify-center text-slate-500">Chargement...</div>;
+
+            if (!user) return <LoginForm onLogin={setUser} />;
+
+            return (
+                <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
+                    {/* Header */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-blue-600 text-white font-bold rounded-lg p-2 text-xl tracking-tighter shadow-lg">
+                                    FCT
+                                </div>
+                                <div>
+                                    <h1 className="text-lg font-semibold leading-tight">Compte-rendu d'Activité</h1>
+                                    <p className="text-xs text-slate-500 font-medium">Exercice {YEAR}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <div className="hidden md:flex items-center gap-2 text-sm text-slate-600">
+                                    <User size={16} />
+                                    <span className="font-medium">{user.username}</span>
+                                </div>
+                                <button
+                                    onClick={() => handleSave(null)}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+                                >
+                                    <Save size={16} />
+                                    <span className="hidden sm:inline">Sauvegarder</span>
+                                </button>
+                                <button
+                                    onClick={handleLogout}
+                                    className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-md transition-colors"
+                                    title="Se déconnecter"
+                                >
+                                    <LogOut size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+                        {/* Onglets Mois */}
+                        <div className="flex overflow-x-auto pb-4 mb-4 gap-2 no-scrollbar scroll-smooth snap-x">
+                            {MONTHS.map((month, index) => (
+                                <button
+                                    key={month}
+                                    onClick={() => setActiveMonth(index)}
+                                    className={`snap-start px-5 py-2.5 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 border ${activeMonth === index
+                                            ? 'bg-slate-800 text-white border-slate-800 shadow-md transform scale-105'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                                        }`}
+                                >
+                                    {month}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Panneau de contrôle & Stats */}
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+                            {/* Légende et Actions */}
+                            <div className="lg:col-span-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                                <div className="flex flex-wrap gap-4 text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <span className="flex items-center justify-center w-6 h-6 rounded border bg-blue-100 border-blue-300 text-blue-700"><CheckCircle size={14} /></span>
+                                        <span>Présence (1j)</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="flex items-center justify-center w-6 h-6 rounded border bg-indigo-100 border-indigo-300 text-indigo-700"><PieChart size={14} /></span>
+                                        <span>Demi-journée (0.5j)</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="flex items-center justify-center w-6 h-6 rounded border bg-red-100 border-red-300 text-red-700"><XCircle size={14} /></span>
+                                        <span>Absence</span>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleFillMonth}
+                                        className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md font-medium transition-colors"
+                                    >
+                                        Remplir auto (100%)
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Carte Total */}
+                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl p-4 text-white shadow-lg flex flex-col justify-center">
+                                <p className="text-blue-100 text-sm font-medium mb-1">{MONTHS[activeMonth]} {YEAR}</p>
+                                <div className="flex items-end gap-2">
+                                    <span className="text-4xl font-bold">{stats.daysWorked}</span>
+                                    <span className="text-lg mb-1 opacity-80">Jours</span>
+                                </div>
+                                <div className="mt-2 text-xs text-blue-200 flex justify-between">
+                                    <span>Absences: {stats.daysAbsent} j</span>
+                                    <span>Total ref: {stats.daysWorked + stats.daysAbsent} j</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Tableau */}
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3 w-16 text-center">J</th>
+                                            <th className="px-6 py-3 w-48">Date</th>
+                                            <th className="px-4 py-3 text-center w-32">Journée</th>
+                                            <th className="px-6 py-3">Commentaire / Mission</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {Array.from({ length: getDaysInMonth(activeMonth) }, (_, i) => i + 1).map((day) => {
+                                            const dayInfo = getDayInfo(day, activeMonth);
+                                            const status = getStatus(dayInfo.dateString, dayInfo);
+                                            const currentComment = timesheet[dayInfo.dateString]?.comment || '';
+
+                                            const rowClass = dayInfo.type === TYPES.WEEKEND
+                                                ? 'bg-slate-50'
+                                                : dayInfo.type === TYPES.FERIE
+                                                    ? 'bg-amber-50/50'
+                                                    : 'hover:bg-slate-50/50';
+
+                                            const dayColor = (dayInfo.dayOfWeek === 0 || dayInfo.dayOfWeek === 6) ? 'text-slate-400' : 'text-slate-700 font-medium';
+
+                                            return (
+                                                <tr key={day} className={`transition-colors ${rowClass}`}>
+                                                    <td className="px-6 py-3 text-center text-slate-400 font-mono text-xs">
+                                                        {String(day).padStart(2, '0')}
+                                                    </td>
+
+                                                    <td className={`px-6 py-3 ${dayColor}`}>
+                                                        {DAYS_FR[dayInfo.dayOfWeek]} {day} {MONTHS[activeMonth].substring(0, 3)}
+                                                        {dayInfo.type === TYPES.FERIE && (
+                                                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                                                {dayInfo.label}
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-4 py-2 text-center">
+                                                        <button
+                                                            disabled={dayInfo.isLocked}
+                                                            onClick={() => handleCellClick(dayInfo.dateString)}
+                                                            className={`w-full h-9 rounded-md flex items-center justify-center gap-2 border transition-all select-none ${status.color} ${dayInfo.isLocked ? 'cursor-not-allowed opacity-60 border-transparent' : 'cursor-pointer hover:shadow-sm'}`}
+                                                        >
+                                                            {status.icon && <status.icon size={16} />}
+                                                            {status.id === 'HALF' && <span className="text-xs font-bold">0.5</span>}
+                                                            {!status.icon && dayInfo.isLocked && <span className="text-xs text-slate-300">-</span>}
+                                                        </button>
+                                                    </td>
+
+                                                    <td className="px-6 py-2">
+                                                        {dayInfo.isLocked ? (
+                                                            <span className="text-xs text-slate-400 italic">{dayInfo.label}</span>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={currentComment}
+                                                                onChange={(e) => handleCommentChange(dayInfo.dateString, e.target.value)}
+                                                                placeholder="Saisir activité ou motif..."
+                                                                className="w-full bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none text-sm py-1 text-slate-600 placeholder-slate-300"
+                                                            />
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+                                <span>FCT - Système de Gestion des Temps v2.0 (Connecté)</span>
+                                <div className="flex gap-4">
+                                    <span>Année {YEAR}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+    </script>
+</body>
+
+</html>
