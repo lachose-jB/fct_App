@@ -94,11 +94,13 @@
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
 
-            const [activeMonth, setActiveMonth] = useState(1); // 1 = Février
+            // Initialiser au mois actuel (0 = Janvier, 1 = Février, etc.)
+            const currentDate = new Date();
+            const [activeMonth, setActiveMonth] = useState(currentDate.getMonth()); // Mois actuel
             const [timesheet, setTimesheet] = useState({});
             const [showExportModal, setShowExportModal] = useState(false);
             const [exportFormat, setExportFormat] = useState('pdf');
-            const [selectedMonths, setSelectedMonths] = useState([1]);
+            const [selectedMonths, setSelectedMonths] = useState([currentDate.getMonth()]);
             const [saving, setSaving] = useState(false);
             const [notification, setNotification] = useState(null);
             useEffect(() => {
@@ -512,7 +514,13 @@
                             <div className="flex items-center gap-4">
                                 <div className="hidden md:flex items-center gap-2 text-sm text-slate-600">
                                     <User size={16} />
-                                    <span className="font-medium">{user.username}</span>
+                                    <a 
+                                        href="/profile.html"
+                                        className="font-medium hover:text-blue-600 transition-colors"
+                                        title="Mon profil"
+                                    >
+                                        {user.username}
+                                    </a>
                                 </div>
                                 <button
                                     onClick={() => handleSave(null)}

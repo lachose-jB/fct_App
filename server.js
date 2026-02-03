@@ -159,12 +159,69 @@ app.get('/api/auth/me', (req, res) => {
     }
 });
 
+// Change Password
+app.post('/api/auth/change-password', isAuthenticated, authLimiter, [
+    body('currentPassword').notEmpty().withMessage('Le mot de passe actuel est requis'),
+    body('newPassword')
+        .isLength({ min: 8, max: 128 })
+        .withMessage('Le nouveau mot de passe doit faire entre 8 et 128 caractères')
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+        .withMessage('Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.session.userId;
+
+    try {
+        // Récupérer l'utilisateur
+        db.get('SELECT * FROM users WHERE id = ?', [userId], async (err, user) => {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Erreur de base de données' });
+            }
+
+            if (!user) {
+                return res.status(404).json({ error: 'Utilisateur non trouvé' });
+            }
+
+            // Vérifier le mot de passe actuel
+            const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+            if (!isValid) {
+                return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
+            }
+
+            // Hasher le nouveau mot de passe
+            const newHash = await bcrypt.hash(newPassword, 12);
+
+            // Mettre à jour le mot de passe
+            db.run(
+                'UPDATE users SET password_hash = ? WHERE id = ?',
+                [newHash, userId],
+                (err) => {
+                    if (err) {
+                        console.error('Database error:', err);
+                        return res.status(500).json({ error: 'Échec de la mise à jour' });
+                    }
+                    res.json({ message: 'Mot de passe modifié avec succès' });
+                }
+            );
+        });
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({ error: 'Erreur serveur' });
+    }
+});
+
 // --- TIMESHEET ROUTES ---
 
 // Validation des paramètres de timesheet
 const timesheetValidation = [
     body('year').isInt({ min: 2020, max: 2100 }).withMessage('Année invalide'),
-    body('month').isInt({ min: 1, max: 12 }).withMessage('Mois invalide'),
+    body('month').isInt({ min: 0, max: 11 }).withMessage('Mois invalide'),
     body('data').isObject().withMessage('Données invalides')
 ];
 
@@ -174,8 +231,8 @@ app.get('/api/timesheet/:year/:month', isAuthenticated, apiLimiter, (req, res) =
     const month = parseInt(req.params.month);
     const userId = req.session.userId;
 
-    // Validation des paramètres
-    if (!year || year < 2020 || year > 2100 || !month || month < 1 || month > 12) {
+    // Validation des paramètres (mois 0-11 en JavaScript)
+    if (!year || year < 2020 || year > 2100 || month < 0 || month > 11) {
         return res.status(400).json({ error: 'Paramètres invalides' });
     }
 
